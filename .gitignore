@@ -1,0 +1,40 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+package-lock.json
+yarn.lock
+
+# Environment variables
+.env
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+debug.log*
+pm2.log
+pm2.pid
+
+# Cache & Build
+.cache/
+dist/
+build/
+tmp/
+
+# Database
+*.sqlite
+*.sqlite-journal
+/data/db/
+
+# VSCode & IDE specific
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# OS-specific
+*.swp
+*.swo
