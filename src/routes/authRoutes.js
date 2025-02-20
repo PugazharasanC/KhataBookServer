@@ -31,9 +31,11 @@ router.get("/check", (req, res) => {
 router.get("/logout", (req, res) => {
   req.logout((err) => {
     if (err) {
-      return res.send("Error logging out");
+      return res
+        .status(500)
+        .json({ status: false, message: "Error logging out" });
     }
-    res.redirect("/");
+    res.redirect(process.env.FRONTEND_URL || "/");
   });
 });
 
