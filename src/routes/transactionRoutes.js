@@ -1,26 +1,14 @@
-import { Router } from "express";
-import { ensureAuthenticated } from "../middleware/authMiddleware.js";
+// backend/routes/transactionRoutes.js
+import express from "express";
 import {
-  addExpense,
-  getExpenses,
-  deleteExpense,
-  updateExpense,
-  addIncome,
-  getIncomes,
-  deleteIncome,
-  updateIncome,
+  addTransaction,
+  getTransactions,
 } from "../controllers/transactionController.js";
+import authMiddleware from "../middleware/authMiddleware.js";
 
-const router = Router();
+const router = express.Router();
 
-router.post("/expenses", ensureAuthenticated, addExpense);
-router.get("/expenses", ensureAuthenticated, getExpenses);
-router.delete("/expenses/:id", ensureAuthenticated, deleteExpense);
-router.put("/expenses/:id", ensureAuthenticated, updateExpense);
-
-router.post("/incomes", ensureAuthenticated, addIncome);
-router.get("/incomes", ensureAuthenticated, getIncomes);
-router.delete("/incomes/:id", ensureAuthenticated, deleteIncome);
-router.put("/incomes/:id", ensureAuthenticated, updateIncome);
+router.post("/", authMiddleware, addTransaction);
+router.get("/", authMiddleware, getTransactions);
 
 export default router;

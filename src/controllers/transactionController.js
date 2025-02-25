@@ -1,189 +1,101 @@
-import Expense from "../models/ExpenseModel.js";
-import Income from "../models/IncomeModel.js";
+import Transaction from "../models/Transaction.js";
+import Balance from "../models/Balance.js";
+import mongoose from "mongoose";
 
-// Helper function to validate required fields
-const validateFields = (fields) => {
-  for (let field of fields) {
-    if (!field) {
-      return false;
-    }
-  }
-  return true;
-};
-
-// Helper function to validate amount
-const validateAmount = (amount) => {
-  return amount > 0 && !isNaN(amount);
-};
-
-// Helper function to create an entry (Expense/Income)
-const createEntry = async (Model, data, user) => {
-  const { title, amount, category, date } = data;
-
-  if (!validateFields([title, amount, category, date])) {
-    return { status: false, message: "All fields are required" };
-  }
-
-  if (!validateAmount(amount)) {
-    return { status: false, message: "Amount must be a positive number" };
-  }
-
-  const entry = new Model({
-    title,
-    amount,
-    category,
-    date,
-    user,
-  });
-
+export const addTransaction = async (req, res) => {
   try {
-    await entry.save();
-    return { status: true, message: `${Model.modelName} added` };
+    const { amount, type, category, description, date } = req.body;
+    const { userId } = req.user;
+
+    // Validate transaction type
+    const validTypes = ["income", "expense", "loan", "loan_repayment"];
+    if (!validTypes.includes(type)) {
+      return res.status(400).json({ message: "Invalid transaction type" });
+    }
+
+    // Create transaction
+    const transaction = await Transaction.create({
+      user: userId,
+      amount,
+      type,
+      category,
+      description,
+      date: date || Date.now(),
+    });
+
+    // Update balance
+    let balance = await Balance.findOne({ user: userId });
+    if (!balance) {
+      balance = await Balance.create({ user: userId });
+    }
+
+    switch (type) {
+      case "income":
+        balance.currentBalance += amount;
+        break;
+      case "expense":
+        balance.currentBalance -= amount;
+        break;
+      case "loan":
+        balance.currentBalance += amount;
+        balance.loanBalance += amount;
+        break;
+      case "loan_repayment":
+        balance.currentBalance -= amount;
+        balance.loanBalance -= amount;
+        break;
+    }
+
+    await balance.save();
+
+    // Get updated balance summary
+    const transactionSummary = await Transaction.aggregate([
+      {
+        $match: {
+          user: new mongoose.Types.ObjectId(userId),
+          type: { $in: ["income", "expense", "loan"] },
+        },
+      },
+      {
+        $group: {
+          _id: "$type",
+          total: { $sum: "$amount" },
+        },
+      },
+    ]);
+
+    const totals = transactionSummary.reduce((acc, curr) => {
+      acc[curr._id] = curr.total;
+      return acc;
+    }, {});
+
+    // Return same structure as getBalance
+    res.status(201).json({
+      transaction,
+      balance: {
+        currentBalance: balance.currentBalance,
+        loanBalance: balance.loanBalance,
+        income: totals.income || 0,
+        expense: totals.expense || 0,
+        loan: totals.loan || 0,
+      },
+    });
   } catch (error) {
-    return { status: false, message: "Server error" };
+    console.error("Transaction error:", error);
+    res.status(500).json({
+      message: "Error adding transaction",
+      error: error.message,
+    });
   }
 };
 
-// Add Expense
-export const addExpense = async (req, res) => {
-  const result = await createEntry(Expense, req.body, req.user._id);
-  return res.status(result.status ? 200 : 400).json(result);
-};
-
-// Get Expenses
-export const getExpenses = async (req, res) => {
+export const getTransactions = async (req, res) => {
   try {
-    const expenses = await Expense.find({ user: req.user._id });
-    return res.status(200).json(expenses);
+    const transactions = await Transaction.find({ user: req.user._id }).sort({
+      date: -1,
+    });
+    res.status(200).json(transactions);
   } catch (error) {
-    return res.status(500).json({ status: false, message: "Server error" });
-  }
-};
-
-// Delete Expense
-export const deleteExpense = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const expense = await Expense.findById(id);
-
-    if (!expense) {
-      return res
-        .status(400)
-        .json({ status: false, message: "Expense not found" });
-    }
-
-    await Expense.findByIdAndDelete(id);
-    return res.status(200).json({ status: true, message: "Expense deleted" });
-  } catch (error) {
-    return res.status(500).json({ status: false, message: "Server error" });
-  }
-};
-
-// Add Income
-export const addIncome = async (req, res) => {
-  const result = await createEntry(Income, req.body, req.user._id);
-  return res.status(result.status ? 200 : 400).json(result);
-};
-
-// Get Incomes
-export const getIncomes = async (req, res) => {
-  try {
-    const incomes = await Income.find({ user: req.user._id });
-    return res.status(200).json(incomes);
-  } catch (error) {
-    return res.status(500).json({ status: false, message: "Server error" });
-  }
-};
-
-// Delete Income
-export const deleteIncome = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const income = await Income.findById(id);
-
-    if (!income) {
-      return res
-        .status(400)
-        .json({ status: false, message: "Income not found" });
-    }
-
-    await Income.findByIdAndDelete(id);
-    return res.status(200).json({ status: true, message: "Income deleted" });
-  } catch (error) {
-    return res.status(500).json({ status: false, message: "Server error" });
-  }
-};
-
-export const updateExpense = async (req, res) => {
-  const { id } = req.params;
-  const { title, amount, category, date } = req.body;
-
-  try {
-    const expense = await Expense.findById(id);
-
-    if (!expense) {
-      return res
-        .status(400)
-        .json({ status: false, message: "Expense not found" });
-    }
-
-    if (!validateFields([title, amount, category, date])) {
-      return res
-        .status(400)
-        .json({ status: false, message: "All fields are required" });
-    }
-
-    if (!validateAmount(amount)) {
-      return res
-        .status(400)
-        .json({ status: false, message: "Amount must be a positive number" });
-    }
-
-    expense.title = title;
-    expense.amount = amount;
-    expense.category = category;
-    expense.date = date;
-
-    await expense.save();
-    return res.status(200).json({ status: true, message: "Expense updated" });
-  } catch (error) {
-    return res.status(500).json({ status: false, message: "Server error" });
-  }
-};
-
-export const updateIncome = async (req, res) => {
-  const { id } = req.params;
-  const { title, amount, category, date } = req.body;
-
-  try {
-    const income = await Income.findById(id);
-
-    if (!income) {
-      return res
-        .status(400)
-        .json({ status: false, message: "Income not found" });
-    }
-
-    if (!validateFields([title, amount, category, date])) {
-      return res
-        .status(400)
-        .json({ status: false, message: "All fields are required" });
-    }
-
-    if (!validateAmount(amount)) {
-      return res
-        .status(400)
-        .json({ status: false, message: "Amount must be a positive number" });
-    }
-
-    income.title = title;
-    income.amount = amount;
-    income.category = category;
-    income.date = date;
-
-    await income.save();
-    return res.status(200).json({ status: true, message: "Income updated" });
-  } catch (error) {
-    return res.status(500).json({ status: false, message: "Server error" });
+    res.status(500).json({ message: "Error fetching transactions", error });
   }
 };
