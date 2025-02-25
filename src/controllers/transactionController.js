@@ -4,56 +4,75 @@ import mongoose from "mongoose";
 
 export const addTransaction = async (req, res) => {
   try {
+    const session = await mongoose.startSession();
     const { amount, type, category, description, date } = req.body;
     const { userId } = req.user;
 
-    // Validate transaction type
     const validTypes = ["income", "expense", "loan", "loan_repayment"];
     if (!validTypes.includes(type)) {
       return res.status(400).json({ message: "Invalid transaction type" });
     }
 
-    // Create transaction
-    const transaction = await Transaction.create({
-      user: userId,
-      amount,
-      type,
-      category,
-      description,
-      date: date || Date.now(),
-    });
+    session.startTransaction();
 
-    // Update balance
-    let balance = await Balance.findOne({ user: userId });
+    const transaction = await Transaction.create(
+      [
+        {
+          user: userId,
+          amount,
+          type,
+          category,
+          description,
+          date: date || Date.now(),
+        },
+      ],
+      { session }
+    );
+
+    let balance = await Balance.findOne({ user: userId }).session(session);
     if (!balance) {
-      balance = await Balance.create({ user: userId });
+      balance = await Balance.create(
+        [
+          {
+            user: userId,
+            currentBalance: 0,
+            loanBalance: 0,
+          },
+        ],
+        { session }
+      );
     }
 
     switch (type) {
       case "income":
-        balance.currentBalance += amount;
+        balance.currentBalance += Number(amount);
         break;
       case "expense":
-        balance.currentBalance -= amount;
+        balance.currentBalance -= Number(amount);
         break;
       case "loan":
-        balance.currentBalance += amount;
-        balance.loanBalance += amount;
+        balance.currentBalance += Number(amount);
+        balance.loanBalance += Number(amount);
         break;
       case "loan_repayment":
-        balance.currentBalance -= amount;
-        balance.loanBalance -= amount;
+        if (balance.loanBalance < amount) {
+          await session.abortTransaction();
+          return res.status(400).json({ message: "Insufficient loan balance" });
+        }
+        balance.currentBalance -= Number(amount);
+        balance.loanBalance -= Number(amount);
         break;
     }
 
-    await balance.save();
+    await balance.save({ session });
 
-    // Get updated balance summary
+    await session.commitTransaction();
+
     const transactionSummary = await Transaction.aggregate([
       {
         $match: {
           user: new mongoose.Types.ObjectId(userId),
-          type: { $in: ["income", "expense", "loan"] },
+          type: { $in: ["income", "expense", "loan", "loan_repayment"] },
         },
       },
       {
@@ -69,31 +88,36 @@ export const addTransaction = async (req, res) => {
       return acc;
     }, {});
 
-    // Return same structure as getBalance
     res.status(201).json({
-      transaction,
+      transaction: transaction[0],
       balance: {
         currentBalance: balance.currentBalance,
         loanBalance: balance.loanBalance,
         income: totals.income || 0,
         expense: totals.expense || 0,
         loan: totals.loan || 0,
+        loanRepayment: totals.loan_repayment || 0,
       },
     });
   } catch (error) {
+    await session.abortTransaction();
     console.error("Transaction error:", error);
     res.status(500).json({
       message: "Error adding transaction",
       error: error.message,
     });
+  } finally {
+    session.endSession();
   }
 };
 
 export const getTransactions = async (req, res) => {
   try {
-    const transactions = await Transaction.find({ user: req.user._id }).sort({
-      date: -1,
-    });
+    const transactions = await Transaction.find({ user: req.user.userId }).sort(
+      {
+        date: -1,
+      }
+    );
     res.status(200).json(transactions);
   } catch (error) {
     res.status(500).json({ message: "Error fetching transactions", error });
