@@ -3,8 +3,8 @@ import Balance from "../models/Balance.js";
 import mongoose from "mongoose";
 
 export const addTransaction = async (req, res) => {
+  const session = await mongoose.startSession();
   try {
-    const session = await mongoose.startSession();
     const { amount, type, category, description, date } = req.body;
     const { userId } = req.user;
 
