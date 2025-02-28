@@ -6,6 +6,7 @@ import authRoutes from "./src/routes/authRoutes.js";
 import transactionRoutes from "./src/routes/transactionRoutes.js";
 import balanceRoutes from "./src/routes/balanceRoutes.js";
 import userRoutes from "./src/routes/userRoutes.js";
+import categoryRouter from "./src/routes/categories.js";
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/balance", balanceRoutes);
 app.use("/api/user", userRoutes);
+app.use("/api/category", categoryRouter);
 app.use("/", (req, res) => {
   res.send(
     `Welcome to the Expense Tracker API, visit ${process.env.FRONTEND_URL} for application`

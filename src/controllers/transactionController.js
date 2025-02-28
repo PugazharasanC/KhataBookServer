@@ -1,6 +1,8 @@
 import Transaction from "../models/Transaction.js";
 import Balance from "../models/Balance.js";
 import mongoose from "mongoose";
+import { defaultCategories } from "../config/categories.js";
+import UserCategories from "../models/UserCategories.js";
 
 export const addTransaction = async (req, res) => {
   const session = await mongoose.startSession();
@@ -15,13 +17,23 @@ export const addTransaction = async (req, res) => {
 
     session.startTransaction();
 
+    // Validate category against defaults and user-specific categories
+    if (!defaultCategories[type].includes(category.toLowerCase())) {
+      // Add to user's custom categories if not already present
+      await UserCategories.findOneAndUpdate(
+        { user: userId, type },
+        { $addToSet: { categories: category.toLowerCase() } },
+        { session, upsert: true }
+      );
+    }
+
     const transaction = await Transaction.create(
       [
         {
           user: userId,
           amount,
           type,
-          category,
+          category: category.toLowerCase(),
           description,
           date: date || Date.now(),
         },
@@ -48,6 +60,12 @@ export const addTransaction = async (req, res) => {
         balance.currentBalance += Number(amount);
         break;
       case "expense":
+        if (balance.currentBalance < amount) {
+          await session.abortTransaction();
+          return res
+            .status(400)
+            .json({ message: "Insufficient funds for expense" });
+        }
         balance.currentBalance -= Number(amount);
         break;
       case "loan":
@@ -57,7 +75,15 @@ export const addTransaction = async (req, res) => {
       case "loan_repayment":
         if (balance.loanBalance < amount) {
           await session.abortTransaction();
-          return res.status(400).json({ message: "Insufficient loan balance" });
+          return res
+            .status(400)
+            .json({ message: "Repayment exceeds loan balance" });
+        }
+        if (balance.currentBalance < amount) {
+          await session.abortTransaction();
+          return res
+            .status(400)
+            .json({ message: "Insufficient funds for repayment" });
         }
         balance.currentBalance -= Number(amount);
         balance.loanBalance -= Number(amount);

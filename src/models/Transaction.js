@@ -13,20 +13,6 @@ const transactionSchema = new mongoose.Schema(
     category: {
       type: String,
       required: true,
-      enum: [
-        "salary",
-        "freelance",
-        "gift",
-        "investment", // Income categories
-        "groceries",
-        "entertainment",
-        "utilities",
-        "rent", // Expense categories
-        "personal loan",
-        "mortgage",
-        "education loan",
-        "car loan", // Loan categories
-      ],
     },
     source: { type: String, default: "" },
     description: { type: String },
